@@ -25,5 +25,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - numpy>=2.0
+          - pytest>=8.0
+          - hypothesis>=6.100
         args: ["--config-file=pyproject.toml"]
         files: ^(src|tests)/

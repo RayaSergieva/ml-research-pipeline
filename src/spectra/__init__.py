@@ -1,5 +1,7 @@
 """spectra: a linear-algebra-first deep learning framework in NumPy."""
 
-__version__ = "0.0.1"
+from spectra.tensor import Tensor
 
-__all__ = ["__version__"]
+__version__ = "0.0.2"
+
+__all__ = ["Tensor", "__version__"]

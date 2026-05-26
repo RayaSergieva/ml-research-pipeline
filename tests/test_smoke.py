@@ -15,3 +15,7 @@ def test_version_is_pre_alpha() -> None:
     assert major == 0
     assert minor == 0
     assert patch >= 1
+
+
+def test_tensor_is_exported() -> None:
+    assert hasattr(spectra, "Tensor")
