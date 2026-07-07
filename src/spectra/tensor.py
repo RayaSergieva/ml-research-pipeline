@@ -217,6 +217,36 @@ class Tensor:
 
         return ops.ReLU.apply(self)
 
+    def gelu(self) -> Tensor:
+        """Gaussian error linear unit, tanh approximation."""
+        from spectra import ops
+
+        return ops.GELU.apply(self)
+
+    def reshape(self, *shape: int) -> Tensor:
+        """Return a tensor with the same data viewed in a new shape."""
+        from spectra import ops
+
+        return ops.Reshape.apply(self, shape=shape)
+
+    def transpose(self, *axes: int) -> Tensor:
+        """Permute axes; with no arguments, reverse them."""
+        from spectra import ops
+
+        return ops.Transpose.apply(self, axes=axes if axes else None)
+
+    def bmm(self, other: Tensor | ArrayLike) -> Tensor:
+        """Batched matrix multiply on the last two axes."""
+        from spectra import ops
+
+        return ops.BatchedMatMul.apply(self, _coerce(other))
+
+    def softmax(self, axis: int = -1) -> Tensor:
+        """Softmax along ``axis``, numerically stabilized."""
+        from spectra import ops
+
+        return ops.Softmax.apply(self, axis=axis)
+
     def exp(self) -> Tensor:
         """Elementwise exponential."""
         from spectra import ops

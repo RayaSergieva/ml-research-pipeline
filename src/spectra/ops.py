@@ -205,3 +205,101 @@ class Pow(Function):
         (a,) = self.saved
         p = self._exponent
         return (grad_output * p * a ** (p - 1),)
+
+
+class Reshape(Function):
+    """Shape change without data movement. Linear with identity Jacobian in
+    the flattened view, so the backward pass is the inverse reshape."""
+
+    def forward(self, a: Array, *, shape: tuple[int, ...]) -> Array:  # type: ignore[override]
+        self._original_shape = a.shape
+        return np.asarray(a.reshape(shape))
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        return (grad_output.reshape(self._original_shape),)
+
+
+class Transpose(Function):
+    """Axis permutation. The adjoint of a permutation is its inverse."""
+
+    def forward(self, a: Array, *, axes: tuple[int, ...] | None = None) -> Array:  # type: ignore[override]
+        if axes is None:
+            axes = tuple(range(a.ndim))[::-1]
+        self._axes = axes
+        return np.asarray(np.transpose(a, axes))
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        inverse = np.argsort(self._axes)
+        return (np.transpose(grad_output, inverse),)
+
+
+class BatchedMatMul(Function):
+    """Matrix product on the last two axes, broadcasting over batch axes.
+
+    For C = A B with G = dL/dC the last-two-axes chain rule is unchanged,
+    dL/dA = G B^T and dL/dB = A^T G with the transpose taken on the last two
+    axes; batch axes that were broadcast in the forward pass are summed in
+    the backward pass, the same adjoint-of-broadcast rule as elementwise ops.
+    """
+
+    def forward(self, a: Array, b: Array) -> Array:  # type: ignore[override]
+        if a.ndim < 2 or b.ndim < 2:
+            msg = f"batched matmul needs operands of rank >= 2, got {a.ndim}-D and {b.ndim}-D"
+            raise ValueError(msg)
+        self.save_for_backward(a, b)
+        return np.asarray(a @ b)
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        a, b = self.saved
+        grad_a = grad_output @ np.swapaxes(b, -1, -2)
+        grad_b = np.swapaxes(a, -1, -2) @ grad_output
+        return (_unbroadcast(grad_a, a.shape), _unbroadcast(grad_b, b.shape))
+
+
+class Softmax(Function):
+    """Softmax along one axis, computed with the max-shift for stability.
+
+    With s = softmax(z) along the axis, the Jacobian action is
+    ds = s * (g - <g, s>), the projection of g onto the tangent of the
+    probability simplex scaled by s - derived in the notebook from
+    d s_i / d z_j = s_i (delta_ij - s_j).
+    """
+
+    def forward(self, a: Array, *, axis: int = -1) -> Array:  # type: ignore[override]
+        shifted = a - a.max(axis=axis, keepdims=True)
+        exp = np.exp(shifted)
+        out = exp / exp.sum(axis=axis, keepdims=True)
+        self._axis = axis
+        self.save_for_backward(out)
+        return np.asarray(out)
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        (s,) = self.saved
+        inner = (grad_output * s).sum(axis=self._axis, keepdims=True)
+        return (s * (grad_output - inner),)
+
+
+class GELU(Function):
+    """Gaussian error linear unit, tanh approximation (Hendrycks &
+    Gimpel, 2016).
+
+    gelu(x) ~= 0.5 x (1 + tanh(sqrt(2/pi) (x + 0.044715 x^3))). The
+    derivative follows by the product and chain rules and is spelled out in
+    the notebook; both are validated against finite differences.
+    """
+
+    _C = float(np.sqrt(2.0 / np.pi))
+    _K = 0.044715
+
+    def forward(self, a: Array) -> Array:  # type: ignore[override]
+        self.save_for_backward(a)
+        inner = self._C * (a + self._K * a**3)
+        return np.asarray(0.5 * a * (1.0 + np.tanh(inner)))
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        (a,) = self.saved
+        inner = self._C * (a + self._K * a**3)
+        t = np.tanh(inner)
+        d_inner = self._C * (1.0 + 3.0 * self._K * a**2)
+        grad = 0.5 * (1.0 + t) + 0.5 * a * (1.0 - t**2) * d_inner
+        return (grad_output * grad,)

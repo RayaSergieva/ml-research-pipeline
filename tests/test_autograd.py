@@ -280,3 +280,85 @@ def test_grad_mean_keepdims() -> None:
         lambda x: x.mean(axis=0, keepdims=True).sum(),
         RNG.standard_normal((3, 4)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Shape ops and transformer-support ops
+# ---------------------------------------------------------------------------
+
+
+def test_grad_reshape() -> None:
+    check_gradient(lambda x: (x.reshape(6, 2) * 2.0).sum(), RNG.standard_normal((3, 4)))
+
+
+def test_reshape_roundtrip_gradient_is_identity() -> None:
+    x = Tensor(RNG.standard_normal((3, 4)), requires_grad=True)
+    x.reshape(12).reshape(3, 4).sum().backward()
+    assert x.grad is not None
+    np.testing.assert_allclose(x.grad, np.ones((3, 4)))
+
+
+def test_grad_transpose() -> None:
+    b = RNG.standard_normal((4, 3))
+    check_gradient(lambda x: (x.transpose() * Tensor(b)).sum(), RNG.standard_normal((3, 4)))
+
+
+def test_grad_transpose_with_axes() -> None:
+    check_gradient(
+        lambda x: (x.transpose(1, 0, 2) ** 2.0).sum(),
+        RNG.uniform(0.5, 1.5, (2, 3, 4)),
+    )
+
+
+def test_grad_batched_matmul_left() -> None:
+    b = RNG.standard_normal((2, 4, 3))
+    check_gradient(lambda x: x.bmm(Tensor(b)).sum(), RNG.standard_normal((2, 5, 4)))
+
+
+def test_grad_batched_matmul_right() -> None:
+    a = RNG.standard_normal((2, 5, 4))
+    check_gradient(lambda x: Tensor(a).bmm(x).sum(), RNG.standard_normal((2, 4, 3)))
+
+
+def test_grad_batched_matmul_broadcast_batch() -> None:
+    """A single matrix broadcast across the batch must receive summed grads."""
+    a = RNG.standard_normal((3, 5, 4))
+    check_gradient(lambda x: Tensor(a).bmm(x).sum(), RNG.standard_normal((4, 2)))
+
+
+def test_batched_matmul_rejects_vectors() -> None:
+    a = Tensor(RNG.standard_normal(4), requires_grad=True)
+    with pytest.raises(ValueError, match="rank"):
+        a.bmm(Tensor(RNG.standard_normal((4, 2))))
+
+
+def test_grad_softmax() -> None:
+    weights = Tensor(RNG.standard_normal((3, 5)))
+    check_gradient(lambda x: (x.softmax() * weights).sum(), RNG.standard_normal((3, 5)))
+
+
+def test_grad_softmax_other_axis() -> None:
+    weights = Tensor(RNG.standard_normal((3, 5)))
+    check_gradient(lambda x: (x.softmax(axis=0) * weights).sum(), RNG.standard_normal((3, 5)))
+
+
+def test_softmax_rows_sum_to_one() -> None:
+    s = Tensor(RNG.standard_normal((4, 7))).softmax()
+    np.testing.assert_allclose(s.data.sum(axis=-1), np.ones(4))
+
+
+def test_softmax_is_stable_for_large_inputs() -> None:
+    s = Tensor(np.array([[1e4, 0.0, -1e4]])).softmax()
+    assert np.all(np.isfinite(s.data))
+
+
+def test_grad_gelu() -> None:
+    check_gradient(lambda x: x.gelu().sum(), RNG.standard_normal((3, 4)))
+
+
+def test_gelu_matches_reference_values() -> None:
+    """gelu(0) = 0 and gelu is close to identity for large positive x."""
+    out = Tensor(np.array([0.0, 6.0, -6.0])).gelu().data
+    assert out[0] == 0.0
+    np.testing.assert_allclose(out[1], 6.0, atol=1e-3)
+    np.testing.assert_allclose(out[2], 0.0, atol=1e-3)
