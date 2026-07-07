@@ -151,14 +151,10 @@ class Tensor:
             return bool(np.array_equal(self._data, other._data, equal_nan=True))
         return bool(np.array_equal(self._data, other._data))
 
-    def __hash__(self) -> None:  # type: ignore[override]
-        """Tensors are unhashable.
-
-        A tensor's underlying array is mutable, which is incompatible with
-        hashing. Set the value to ``None`` rather than inheriting :class:`object`'s
-        identity-based hash to make the rejection explicit.
-        """
-        return None
+    # Tensors are unhashable: their underlying array is mutable, which is
+    # incompatible with hashing. Setting ``__hash__ = None`` is the canonical
+    # Python pattern for marking a class as unhashable.
+    __hash__ = None  # type: ignore[assignment]
 
     def __repr__(self) -> str:
         cls = type(self).__name__

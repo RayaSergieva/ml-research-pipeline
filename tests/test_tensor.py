@@ -41,9 +41,9 @@ def test_from_numpy_array() -> None:
     arr = np.arange(12, dtype=np.float32).reshape(3, 4)
     t = Tensor(arr)
     assert t.shape == (3, 4)
-    assert (
-        t.dtype == default_dtype()
-    ), "floating inputs without an explicit dtype must be promoted to the framework default"
+    assert t.dtype == default_dtype(), (
+        "floating inputs without an explicit dtype must be promoted to the framework default"
+    )
 
 
 def test_from_numpy_array_with_explicit_dtype() -> None:
@@ -55,9 +55,9 @@ def test_from_numpy_array_with_explicit_dtype() -> None:
 
 def test_integer_input_keeps_integer_dtype() -> None:
     t = Tensor([1, 2, 3])
-    assert np.issubdtype(
-        t.dtype, np.integer
-    ), "integer inputs without an explicit dtype must keep their integer dtype"
+    assert np.issubdtype(t.dtype, np.integer), (
+        "integer inputs without an explicit dtype must keep their integer dtype"
+    )
 
 
 def test_from_tensor_copies_metadata() -> None:

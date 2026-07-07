@@ -13,19 +13,18 @@ repos:
         args: ["--fix=lf"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    rev: v0.15.20
     hooks:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+  - repo: local
     hooks:
       - id: mypy
-        additional_dependencies:
-          - numpy>=2.0
-          - pytest>=8.0
-          - hypothesis>=6.100
-        args: ["--config-file=pyproject.toml"]
-        files: ^(src|tests)/
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
