@@ -3,6 +3,6 @@
 from spectra import init
 from spectra.tensor import Tensor
 
-__version__ = "0.0.10"
+__version__ = "0.0.11"
 
 __all__ = ["Tensor", "__version__", "init"]

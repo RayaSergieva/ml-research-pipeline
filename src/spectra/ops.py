@@ -303,3 +303,25 @@ class GELU(Function):
         d_inner = self._C * (1.0 + 3.0 * self._K * a**2)
         grad = 0.5 * (1.0 + t) + 0.5 * a * (1.0 - t**2) * d_inner
         return (grad_output * grad,)
+
+
+class EmbeddingLookup(Function):
+    """Row gather from an embedding table, out = W[indices].
+
+    The lookup is linear in W - it selects rows - so the adjoint scatters the
+    output gradient back onto the selected rows, summing where an index
+    appears more than once (np.add.at performs the unbuffered accumulation).
+    """
+
+    def forward(self, weight: Array, *, indices: Array) -> Array:  # type: ignore[override]
+        if weight.ndim != 2:
+            msg = f"embedding weight must be 2-D, got {weight.ndim}-D"
+            raise ValueError(msg)
+        self._indices = indices
+        self._weight_shape = weight.shape
+        return np.asarray(weight[indices])
+
+    def backward(self, grad_output: Array) -> tuple[Array | None, ...]:
+        grad = np.zeros(self._weight_shape, dtype=grad_output.dtype)
+        np.add.at(grad, self._indices, grad_output)
+        return (grad,)

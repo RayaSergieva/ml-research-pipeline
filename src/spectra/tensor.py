@@ -192,7 +192,10 @@ class Tensor:
     def __matmul__(self, other: Tensor | ArrayLike) -> Tensor:
         from spectra import ops
 
-        return ops.MatMul.apply(self, _coerce(other))
+        rhs = _coerce(other)
+        if self.ndim == 2 and rhs.ndim == 2:
+            return ops.MatMul.apply(self, rhs)
+        return ops.BatchedMatMul.apply(self, rhs)
 
     def __pow__(self, exponent: float) -> Tensor:
         from spectra import ops
