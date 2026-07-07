@@ -155,14 +155,19 @@ notebooks/             The research notebook (main deliverable)
 tests/                 Test suite with gradient checks
 ```
 
-## Road map
+## Limitations and planned improvements
 
-Ongoing work extends the framework with convolutional and state-space
-architectures, higher-order automatic differentiation for exact Hessian
-analysis, further instruments (neural tangent kernel, information flow,
-topological descriptors), an ablation separating the orthogonality effect
-from the concentration effect in the initialization study, an interactive
-visualization lab, and a paper-style writeup.
+I report these openly since knowing a project's edges matters as much as
+its results.
+
+| Area | Current limitation | Planned improvement |
+|---|---|---|
+| Init study | one architecture, one dataset, 5 seeds, small effects | ablation separating orthogonality from concentration, more seeds, transformer runs |
+| Curvature probe | finite-difference Hessian-vector products | higher-order autograd for exact Hessians |
+| Architectures | MLP and transformer only | convolutional and state-space models |
+| Performance | float64 NumPy on CPU, no profiling section yet | efficiency analysis in the notebook, optional CuPy backend |
+| Instruments | spectra, landscape, geometry | neural tangent kernel, information flow, topological descriptors |
+| Presentation | static plots | interactive spectrum explorer |
 
 ## License
 
