@@ -45,6 +45,8 @@ dev = [
     "mypy>=1.10",
     "ruff==0.15.20",
     "pre-commit>=3.7",
+    "ipykernel>=6.29",
+    "nbconvert>=7.16",
 ]
 
 [project.urls]
