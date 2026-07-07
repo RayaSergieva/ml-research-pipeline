@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from spectra import Tensor
+from spectra.analysis import SpectralTracker
 from spectra.losses import softmax_cross_entropy
 from spectra.nn import Linear, Module
 from spectra.optim import Adam
@@ -65,12 +66,25 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--log-file", type=str, default="runs/mlp_mnist.jsonl")
+    parser.add_argument(
+        "--spectral-every",
+        type=int,
+        default=50,
+        help="capture weight spectra every N optimizer steps (0 disables)",
+    )
+    parser.add_argument(
+        "--spectra-file",
+        type=str,
+        default="runs/mlp_mnist_spectra.npz",
+        help="where to save the full singular value history",
+    )
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
     x_train, y_train, x_test, y_test = load_mnist()
     model = MLP(rng)
     optimizer = Adam(model.parameters(), lr=args.lr)
+    tracker = SpectralTracker(model)
 
     step = 0
     with RunLogger(args.log_file) as logger:
@@ -84,9 +98,19 @@ def main() -> None:
                 step += 1
                 if step % 100 == 0:
                     logger.log(step, event="train", loss=float(loss.data))
+                if args.spectral_every and step % args.spectral_every == 0:
+                    for snap in tracker.capture(step):
+                        logger.log(step, event="spectrum", name=snap.name, **snap.summary())
             test_loss, test_acc = evaluate(model, x_test, y_test)
             logger.log(step, event="epoch", epoch=epoch, test_loss=test_loss, test_acc=test_acc)
             print(f"epoch {epoch}  test loss {test_loss:.4f}  test accuracy {test_acc:.4f}")
+
+    if args.spectral_every:
+        arrays = {
+            f"{snap.name}_step{snap.step}": snap.singular_values for snap in tracker.snapshots
+        }
+        np.savez_compressed(args.spectra_file, **arrays)
+        print(f"saved {len(tracker.snapshots)} spectral snapshots to {args.spectra_file}")
 
 
 if __name__ == "__main__":
