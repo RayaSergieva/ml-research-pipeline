@@ -2,6 +2,6 @@
 
 from spectra.tensor import Tensor
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 __all__ = ["Tensor", "__version__"]

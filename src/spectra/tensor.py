@@ -15,12 +15,15 @@ responsibility to avoid.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, DTypeLike, NDArray
 
 from spectra._backend import default_dtype, get_array_module
+
+if TYPE_CHECKING:
+    from spectra.autograd import Function
 
 
 class Tensor:
@@ -53,7 +56,7 @@ class Tensor:
         The accumulated gradient, or ``None`` if no backward pass has run.
     """
 
-    __slots__ = ("_data", "grad", "requires_grad")
+    __slots__ = ("_ctx", "_data", "grad", "requires_grad")
 
     def __init__(
         self,
@@ -78,6 +81,7 @@ class Tensor:
         self._data: NDArray[Any] = source
         self.requires_grad: bool = bool(requires_grad)
         self.grad: NDArray[Any] | None = None
+        self._ctx: Function | None = None
 
     @property
     def data(self) -> NDArray[Any]:
@@ -156,6 +160,137 @@ class Tensor:
     # Python pattern for marking a class as unhashable.
     __hash__ = None  # type: ignore[assignment]
 
+    # -- Differentiable operations ------------------------------------------
+
+    def __add__(self, other: Tensor | ArrayLike) -> Tensor:
+        from spectra import ops
+
+        return ops.Add.apply(self, _coerce(other))
+
+    def __radd__(self, other: Tensor | ArrayLike) -> Tensor:
+        return self.__add__(other)
+
+    def __mul__(self, other: Tensor | ArrayLike) -> Tensor:
+        from spectra import ops
+
+        return ops.Mul.apply(self, _coerce(other))
+
+    def __rmul__(self, other: Tensor | ArrayLike) -> Tensor:
+        return self.__mul__(other)
+
+    def __neg__(self) -> Tensor:
+        from spectra import ops
+
+        return ops.Neg.apply(self)
+
+    def __sub__(self, other: Tensor | ArrayLike) -> Tensor:
+        return self.__add__(-_coerce(other))
+
+    def __rsub__(self, other: Tensor | ArrayLike) -> Tensor:
+        return _coerce(other).__add__(-self)
+
+    def __matmul__(self, other: Tensor | ArrayLike) -> Tensor:
+        from spectra import ops
+
+        return ops.MatMul.apply(self, _coerce(other))
+
+    def __pow__(self, exponent: float) -> Tensor:
+        from spectra import ops
+
+        return ops.Pow.apply(self, exponent=exponent)
+
+    def sum(self, axis: int | None = None, keepdims: bool = False) -> Tensor:
+        """Sum over all elements, or along ``axis``."""
+        from spectra import ops
+
+        return ops.Sum.apply(self, axis=axis, keepdims=keepdims)
+
+    def mean(self, axis: int | None = None, keepdims: bool = False) -> Tensor:
+        """Arithmetic mean over all elements, or along ``axis``."""
+        from spectra import ops
+
+        return ops.Mean.apply(self, axis=axis, keepdims=keepdims)
+
+    def relu(self) -> Tensor:
+        """Rectified linear unit, elementwise max(x, 0)."""
+        from spectra import ops
+
+        return ops.ReLU.apply(self)
+
+    def exp(self) -> Tensor:
+        """Elementwise exponential."""
+        from spectra import ops
+
+        return ops.Exp.apply(self)
+
+    def log(self) -> Tensor:
+        """Elementwise natural logarithm."""
+        from spectra import ops
+
+        return ops.Log.apply(self)
+
+    # -- Backward pass -------------------------------------------------------
+
+    def backward(self, grad: ArrayLike | None = None) -> None:
+        """Run reverse-mode differentiation from this tensor.
+
+        Computes dself/dx for every tensor x in the graph with
+        ``requires_grad=True`` and accumulates the result into ``x.grad``.
+
+        Parameters
+        ----------
+        grad
+            The gradient of the final objective with respect to this tensor.
+            May be omitted only for single-element tensors, where it defaults
+            to 1, the usual convention for a scalar loss.
+        """
+        if not self.requires_grad:
+            msg = "backward() called on a tensor that does not require grad"
+            raise RuntimeError(msg)
+        if grad is None:
+            if self._data.size != 1:
+                msg = "grad must be provided when calling backward() on a non-scalar tensor"
+                raise RuntimeError(msg)
+            seed = np.ones_like(self._data)
+        else:
+            seed = np.asarray(grad, dtype=self._data.dtype)
+            if seed.shape != self._data.shape:
+                msg = f"grad shape {seed.shape} does not match tensor shape {self._data.shape}"
+                raise ValueError(msg)
+
+        # Iterative depth-first topological sort. Recursion is avoided so
+        # arbitrarily deep graphs cannot overflow the Python call stack.
+        order: list[Tensor] = []
+        visited: set[int] = set()
+        stack: list[tuple[Tensor, bool]] = [(self, False)]
+        while stack:
+            node, processed = stack.pop()
+            if processed:
+                order.append(node)
+                continue
+            if id(node) in visited:
+                continue
+            visited.add(id(node))
+            stack.append((node, True))
+            if node._ctx is not None:
+                for parent in node._ctx.parents:
+                    if id(parent) not in visited:
+                        stack.append((parent, False))
+
+        self.grad = seed
+        for node in reversed(order):
+            if node._ctx is None or node.grad is None:
+                continue
+            input_grads = node._ctx.backward(node.grad)
+            for parent, g in zip(node._ctx.parents, input_grads, strict=True):
+                if g is None or not parent.requires_grad:
+                    continue
+                parent.grad = g if parent.grad is None else parent.grad + g
+
+    def zero_grad(self) -> None:
+        """Reset the accumulated gradient to ``None``."""
+        self.grad = None
+
     def __repr__(self) -> str:
         cls = type(self).__name__
         if self._data.size > 8:
@@ -167,3 +302,8 @@ class Tensor:
         if self.requires_grad:
             parts.append("requires_grad=True")
         return ", ".join(parts) + ")"
+
+
+def _coerce(value: Tensor | ArrayLike) -> Tensor:
+    """Wrap non-Tensor operands so mixed expressions like ``t + 2.0`` work."""
+    return value if isinstance(value, Tensor) else Tensor(value)
