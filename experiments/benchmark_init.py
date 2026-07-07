@@ -4,9 +4,11 @@ Run from the repository root:
 
     uv run python experiments/benchmark_init.py
 
-For each scheme (He normal, Xavier normal, spectral with two concentration
-levels) the same MLP is trained on MNIST for a fixed budget across several
-seeds. Everything except the initial weight matrices is held constant -
+The spectral scheme is swept over five concentration levels alpha in
+{0, 0.25, 0.5, 0.75, 1.0} alongside the He and Xavier baselines, and the
+same MLP is trained on MNIST for a fixed budget across five seeds per
+configuration, giving a dose-response curve in alpha rather than isolated
+points. Everything except the initial weight matrices is held constant -
 architecture, optimizer, learning rate, batch order (seeded per run), and
 epochs - so any difference in outcome is attributable to initialization.
 
@@ -60,15 +62,18 @@ def evaluate(model: MLP, x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
 SCHEMES = {
     "he_normal": init.he_normal,
     "xavier_normal": init.xavier_normal,
-    "spectral_a05": partial(init.spectral, alpha=0.5),
-    "spectral_a10": partial(init.spectral, alpha=1.0),
+    "spectral_a000": partial(init.spectral, alpha=0.0),
+    "spectral_a025": partial(init.spectral, alpha=0.25),
+    "spectral_a050": partial(init.spectral, alpha=0.5),
+    "spectral_a075": partial(init.spectral, alpha=0.75),
+    "spectral_a100": partial(init.spectral, alpha=1.0),
 }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
+    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--log-file", type=str, default="runs/benchmark_init.jsonl")
