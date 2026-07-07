@@ -76,3 +76,44 @@ def he_normal(shape: tuple[int, int], rng: np.random.Generator) -> Array:
     fan_in, _ = _fans(shape)
     std = float(np.sqrt(2.0 / fan_in))
     return (rng.standard_normal(size=shape) * std).astype(default_dtype())
+
+
+def spectral(
+    shape: tuple[int, int],
+    rng: np.random.Generator,
+    alpha: float = 0.5,
+) -> Array:
+    """Spectrum-aware initialization, W = U diag(s) V^T with a designed
+    spectrum.
+
+    Motivated by this project's empirical finding that training concentrates
+    every layer's spectrum into a small number of dominant directions, the
+    scheme starts the matrix with that anisotropy already present instead of
+    the flat Marchenko-Pastur bulk of i.i.d. schemes.
+
+    The singular values follow a power law, s_i proportional to i^(-alpha)
+    for i = 1..r with r = min(shape), and the whole spectrum is rescaled so
+    the Frobenius norm equals that of a He-normal draw of the same shape,
+    E||W||_F^2 = 2 * fan_out (with the (fan_in, fan_out) layout used by the
+    framework, He variance 2/fan_in times fan_in*fan_out entries). Energy is
+    therefore matched to the He baseline and only its distribution across
+    directions changes, isolating the effect under study. alpha = 0 gives a
+    flat spectrum of the same energy; larger alpha concentrates it.
+
+    The orthogonal factors are drawn from the Haar measure via QR of
+    Gaussian matrices, so the singular vectors carry no preferred
+    orientation - the spectrum is the only structure injected.
+    """
+    if alpha < 0:
+        msg = f"alpha must be non-negative, got {alpha}"
+        raise ValueError(msg)
+    fan_in, fan_out = _fans(shape)
+    r = min(fan_in, fan_out)
+
+    s = np.arange(1, r + 1, dtype=np.float64) ** (-alpha)
+    target_frobenius_sq = 2.0 * fan_out  # matches E||W||_F^2 under He
+    s *= np.sqrt(target_frobenius_sq / np.sum(s**2))
+
+    u, _ = np.linalg.qr(rng.standard_normal((fan_in, r)))
+    v, _ = np.linalg.qr(rng.standard_normal((fan_out, r)))
+    return np.asarray((u * s) @ v.T, dtype=default_dtype())

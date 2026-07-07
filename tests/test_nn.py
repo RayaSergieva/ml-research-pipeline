@@ -191,3 +191,72 @@ def test_two_layer_network_trains_one_step() -> None:
     model.zero_grad()
     loss_after = compute_loss()
     assert float(loss_after.data) < float(loss_before.data)
+
+
+# ---------------------------------------------------------------------------
+# Spectrum-aware initialization
+# ---------------------------------------------------------------------------
+
+
+def test_spectral_init_shape_and_dtype() -> None:
+    w = init.spectral((30, 20), np.random.default_rng(0), alpha=0.5)
+    assert w.shape == (30, 20)
+    assert w.dtype == np.float64
+
+
+def test_spectral_init_realizes_power_law_spectrum() -> None:
+    alpha = 0.7
+    w = init.spectral((40, 25), np.random.default_rng(1), alpha=alpha)
+    s = np.linalg.svd(w, compute_uv=False)
+    expected = np.arange(1, 26, dtype=np.float64) ** (-alpha)
+    expected *= s[0] / expected[0]
+    np.testing.assert_allclose(s, expected, rtol=1e-8)
+
+
+def test_spectral_init_matches_he_energy() -> None:
+    """Frobenius norm is calibrated to the He-normal expectation, so only the
+    energy distribution differs between the schemes, not the total energy."""
+    shape = (200, 150)
+    w = init.spectral(shape, np.random.default_rng(2), alpha=1.0)
+    he_energy = 2.0 * shape[1]
+    np.testing.assert_allclose(np.sum(w**2), he_energy, rtol=1e-10)
+
+    he_draws = [
+        float(np.sum(init.he_normal(shape, np.random.default_rng(seed)) ** 2)) for seed in range(5)
+    ]
+    assert min(he_draws) < he_energy * 1.1
+    assert max(he_draws) > he_energy * 0.9
+
+
+def test_spectral_init_alpha_zero_is_flat() -> None:
+    w = init.spectral((10, 10), np.random.default_rng(3), alpha=0.0)
+    s = np.linalg.svd(w, compute_uv=False)
+    np.testing.assert_allclose(s, s[0], rtol=1e-10)
+
+
+def test_spectral_init_larger_alpha_concentrates() -> None:
+    """Stable rank must fall as alpha grows."""
+
+    def stable_rank(alpha: float) -> float:
+        w = init.spectral((50, 50), np.random.default_rng(4), alpha=alpha)
+        s = np.linalg.svd(w, compute_uv=False)
+        return float(np.sum(s**2) / s[0] ** 2)
+
+    assert stable_rank(0.0) > stable_rank(0.5) > stable_rank(1.5)
+
+
+def test_spectral_init_rejects_negative_alpha() -> None:
+    with pytest.raises(ValueError, match="alpha"):
+        init.spectral((5, 5), np.random.default_rng(5), alpha=-1.0)
+
+
+def test_spectral_init_works_in_linear_layer() -> None:
+    def spectral_init(shape: tuple[int, int], rng: np.random.Generator) -> np.ndarray:
+        return init.spectral(shape, rng, alpha=0.5)
+
+    layer = Linear(6, 4, rng=np.random.default_rng(6), weight_init=spectral_init)
+    x = Tensor(np.random.default_rng(7).standard_normal((3, 6)))
+    out = layer(x)
+    assert out.shape == (3, 4)
+    out.mean().backward()
+    assert layer.weight.grad is not None
